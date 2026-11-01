@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Local</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#" class="logo" id="home-link">PDF<span>Local</span></a>
+    <span class="badge">🔒 100% local · tus archivos nunca salen de tu equipo</span>
+  </header>
+
+  <main id="home" class="home">
+    <h1>Herramientas PDF en tu propia máquina</h1>
+    <p class="lead">Unir, dividir, desbloquear, proteger y ordenar PDFs sin subir nada a internet.</p>
+    <div class="tools" id="tool-grid"></div>
+  </main>
+
+  <section id="tool" class="tool" hidden>
+    <button class="back" id="back">← Todas las herramientas</button>
+    <h2 id="tool-title"></h2>
+    <p class="lead" id="tool-desc"></p>
+
+    <label class="dropzone" id="dropzone">
+      <input type="file" id="file-input" accept="application/pdf,.pdf" hidden>
+      <strong id="drop-label">Seleccionar archivos PDF</strong>
+      <span>o arrastralos y soltalos aquí</span>
+    </label>
+
+    <div id="workspace" class="workspace"></div>
+
+    <div class="actions" id="actions" hidden>
+      <span class="status" id="status"></span>
+      <button class="primary" id="run"></button>
+    </div>
+  </section>
+
+  <dialog id="password-dialog">
+    <form method="dialog">
+      <h3>PDF protegido</h3>
+      <p id="password-message"></p>
+      <input type="password" id="password-input" autocomplete="off" placeholder="Contraseña">
+      <div class="dialog-actions">
+        <button value="cancel" formnovalidate>Cancelar</button>
+        <button value="ok" class="primary">Aceptar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
