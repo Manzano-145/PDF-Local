@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import io
 import re
+import threading
 import zipfile
 from dataclasses import dataclass
 
@@ -179,3 +180,52 @@ def thumbnails(data: bytes, password: str | None = None, width: int = 180, limit
 
 def page_count(data: bytes, password: str | None = None) -> int:
     return len(_open(data, password).pages)
+
+
+@dataclass
+class MarkdownResult:
+    markdown: str
+    pages: int
+    empty_pages: list[int]  # 1-based pages with no extractable text (likely scanned images)
+
+
+# PyMuPDF is not thread-safe and Flask serves requests on several threads.
+_mupdf_lock = threading.Lock()
+
+
+def _clean_markdown(text: str) -> str:
+    lines = [line.rstrip() for line in text.splitlines()]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
+def to_markdown(data: bytes, name: str, password: str | None = None, advanced_layout: bool = False) -> MarkdownResult:
+    """Convert a PDF to Markdown, keeping headings, lists and tables, with page markers.
+
+    The full content is preserved (no summarization) so it can be pasted into an AI chat.
+    `advanced_layout` uses PyMuPDF's layout model: better for multi-column pages and
+    borderless tables, but roughly 50x slower.
+    """
+    page_total = len(_open(data, password).pages)  # friendly errors for bad files/passwords
+
+    import pymupdf  # heavy imports: only loaded when this tool is used
+    import pymupdf4llm
+
+    with _mupdf_lock:  # use_layout() is global state, so it must be set under the lock too
+        pymupdf4llm.use_layout(advanced_layout)
+        document = pymupdf.open(stream=data, filetype="pdf")
+        try:
+            if document.needs_pass:
+                document.authenticate(password or "")
+            chunks = pymupdf4llm.to_markdown(document, page_chunks=True, show_progress=False)
+        finally:
+            document.close()
+
+    sections = [f"# {name}", f"_{page_total} páginas_"]
+    empty_pages = []
+    for number, chunk in enumerate(chunks, start=1):
+        body = _clean_markdown(chunk["text"])
+        if not body:
+            empty_pages.append(number)
+            body = "_(Página sin texto extraíble; posiblemente es una imagen escaneada.)_"
+        sections.append(f"<!-- Página {number} / {page_total} -->\n\n{body}")
+    return MarkdownResult("\n\n".join(sections) + "\n", page_total, empty_pages)

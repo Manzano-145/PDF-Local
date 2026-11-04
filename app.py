@@ -117,6 +117,25 @@ def api_organize():
     return _pdf_response(pdf_tools.organize(files, pages, _passwords(len(files))), "ordenado.pdf")
 
 
+@app.post("/api/markdown")
+def api_markdown():
+    uploads = request.files.getlist("files")
+    if not uploads:
+        raise PdfToolError("No se recibió ningún archivo.")
+    passwords = _passwords(len(uploads))
+    advanced_layout = request.form.get("advanced_layout") == "true"
+    results = []
+    for upload, password in zip(uploads, passwords):
+        result = pdf_tools.to_markdown(upload.read(), upload.filename or "documento.pdf", password, advanced_layout)
+        results.append({
+            "name": upload.filename,
+            "markdown": result.markdown,
+            "pages": result.pages,
+            "empty_pages": result.empty_pages,
+        })
+    return jsonify(files=results)
+
+
 if __name__ == "__main__":
     host, port = "127.0.0.1", 5000
     webbrowser.open(f"http://{host}:{port}")

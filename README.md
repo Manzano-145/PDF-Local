@@ -1,7 +1,7 @@
 # PDF Local
 
-Local PDF toolkit inspired by iLovePDF: merge, split, unlock, protect and organize PDFs
-without uploading anything to third parties.
+Local PDF toolkit inspired by iLovePDF: merge, split, unlock, protect, organize PDFs and convert
+them to Markdown, without uploading anything to third parties.
 
 ## Privacy
 
@@ -31,7 +31,20 @@ The browser opens at http://127.0.0.1:5000.
 | Unlock | `POST /api/unlock` | `password` |
 | Protect | `POST /api/protect` | `new_password` (AES-256), `password` if already protected |
 | Organize | `POST /api/organize` | `pages` JSON: `{file, page, rotate}` or `{blank: true}` |
+| PDF to Markdown | `POST /api/markdown` | Full text with headings, lists and tables as Markdown, with `<!-- Página N / M -->` markers. Returns JSON. |
 | Thumbnails | `POST /api/thumbnails` | optional `limit`, `password` |
+
+## PDF to Markdown
+
+Built for feeding documents to AI chats: the output is the **complete** content (not a summary)
+in a lightweight `.md`, usually a fraction of the PDF size. Tables become Markdown tables and
+every page is marked so the AI can cite page numbers.
+
+The UI option *Análisis de diseño avanzado* (`advanced_layout=true`) enables PyMuPDF's layout
+model for multi-column pages and borderless tables; it is much slower.
+
+Limitation: scanned PDFs (pages that are images) have no extractable text. Those pages are
+flagged in the UI and in the `.md`; OCR is not included.
 
 ## Tests
 

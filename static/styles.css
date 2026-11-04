@@ -110,3 +110,11 @@ dialog h3 { margin-top: 0; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
 .dialog-actions button:not(.primary) { background: none; border: 0; cursor: pointer; color: var(--muted); }
 .dialog-actions .primary { padding: .6rem 1.4rem; font-size: 1rem; }
+
+.panel.wide { max-width: 900px; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.warning { margin: 0; padding: .6rem .8rem; border-radius: 8px; background: #fff4e0; color: #8a5a00; font-size: .9rem; }
+textarea.preview {
+  width: 100%; height: 380px; resize: vertical; padding: .8rem; border: 1px solid var(--border); border-radius: 8px;
+  font: .85rem/1.45 ui-monospace, "Cascadia Code", Consolas, monospace; background: #fafafc; color: var(--text);
+}

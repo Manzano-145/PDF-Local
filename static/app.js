@@ -21,6 +21,10 @@ const TOOLS = {
     icon: '🗂️', title: 'Ordenar PDF', button: 'Guardar cambios', multiple: true,
     desc: 'Ordena, añade y elimina páginas PDF. Arrastra y suelta las miniaturas de página y ordénalas como quieras.',
   },
+  markdown: {
+    icon: '📝', title: 'PDF a Markdown', button: 'Convertir a Markdown', multiple: true,
+    desc: 'Extrae todo el texto del PDF, incluidas tablas, títulos y listas, en un archivo .md liviano y listo para usar como contexto en un chat de IA.',
+  },
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -50,6 +54,7 @@ const state = {
   selected: new Set(), // split: selected zero-based page indexes
   splitMode: 'ranges',
   ranges: '',
+  advancedLayout: false,
   busy: false,
 };
 
@@ -226,7 +231,9 @@ function render() {
   $('#actions').hidden = !hasFiles;
 
   if (!hasFiles) return;
-  const renderers = { merge: renderMerge, split: renderSplit, unlock: renderUnlock, protect: renderProtect, organize: renderOrganize };
+  const renderers = {
+    merge: renderMerge, split: renderSplit, unlock: renderUnlock, protect: renderProtect, organize: renderOrganize, markdown: renderMarkdown,
+  };
   renderers[state.tool](workspace);
 }
 
@@ -371,6 +378,57 @@ function renderOrganize(workspace) {
   );
 }
 
+const mdFileName = (pdfName) => pdfName.replace(/\.pdf$/i, '') + '.md';
+const markdownBlob = (text) => new Blob([text], { type: 'text/markdown;charset=utf-8' });
+
+async function copyText(text, button) {
+  await navigator.clipboard.writeText(text);
+  const label = button.textContent;
+  button.textContent = '✓ Copiado';
+  setTimeout(() => { button.textContent = label; }, 1500);
+}
+
+function renderMarkdown(workspace) {
+  const converted = state.files.filter((f) => f.markdown);
+  const pending = state.files.filter((f) => !f.markdown);
+
+  if (pending.length) {
+    const checkbox = el('input', { type: 'checkbox', checked: state.advancedLayout });
+    checkbox.addEventListener('change', () => { state.advancedLayout = checkbox.checked; });
+    workspace.append(
+      el('div', { className: 'grid' }, pending.map((f) => fileTile(f))),
+      el('div', { className: 'panel' },
+        el('label', {}, checkbox, 'Análisis de diseño avanzado'),
+        el('p', { className: 'hint' }, 'Úsalo si el resultado sale desordenado: mejora PDFs con varias columnas o tablas sin bordes, pero es mucho más lento.')),
+    );
+  }
+
+  if (converted.length > 1) {
+    const combined = converted.map((f) => f.markdown).join('\n\n---\n\n');
+    workspace.append(el('div', { className: 'toolbar' },
+      el('button', { className: 'secondary', onclick: (event) => copyText(combined, event.currentTarget) }, '📋 Copiar todo'),
+      el('button', { className: 'secondary', onclick: () => download({ blob: markdownBlob(combined), name: 'documentos.md' }) }, '⬇ Descargar todo en un .md')));
+  }
+
+  for (const entry of converted) {
+    const tokens = Math.round(entry.markdown.length / 4);
+    const pdfSize = (entry.file.size / 1024).toFixed(0);
+    const mdSize = (markdownBlob(entry.markdown).size / 1024).toFixed(0);
+    workspace.append(el('div', { className: 'panel wide' },
+      el('div', { className: 'panel-head' },
+        el('strong', {}, entry.name),
+        el('button', { className: 'secondary', title: 'Quitar', onclick: () => removeFile(entry.key) }, '✕')),
+      el('p', { className: 'hint' },
+        `${entry.pages} páginas · PDF ${pdfSize} KB → Markdown ${mdSize} KB · ~${tokens.toLocaleString('es')} tokens (estimado)`),
+      entry.emptyPages.length > 0 && el('p', { className: 'warning' },
+        `⚠ Páginas sin texto extraíble (probablemente escaneadas): ${entry.emptyPages.join(', ')}. Su contenido no aparece en el .md.`),
+      el('textarea', { className: 'preview', readonly: true, spellcheck: 'false' }, entry.markdown),
+      el('div', { className: 'toolbar' },
+        el('button', { className: 'secondary', onclick: (event) => copyText(entry.markdown, event.currentTarget) }, '📋 Copiar'),
+        el('button', { className: 'secondary', onclick: () => download({ blob: markdownBlob(entry.markdown), name: mdFileName(entry.name) }) }, '⬇ Descargar .md'))));
+  }
+}
+
 // ---------- Actions ----------
 
 function filesForm(entries) {
@@ -427,6 +485,23 @@ const runners = {
     form.append('pages', JSON.stringify(pages));
     return api('/api/organize', form);
   },
+
+  async markdown() {
+    // One request per file so each protected PDF can ask for its own password.
+    for (const [index, entry] of state.files.entries()) {
+      if (entry.markdown) continue;
+      setStatus(`Convirtiendo ${index + 1} de ${state.files.length}: ${entry.name}…`);
+      const result = await withPassword(entry, () => {
+        const form = filesForm([entry]);
+        form.append('advanced_layout', state.advancedLayout);
+        return api('/api/markdown', form, 'json');
+      });
+      const { markdown, pages, empty_pages: emptyPages } = result.files[0];
+      Object.assign(entry, { markdown, pages, emptyPages });
+      render();
+    }
+    return null; // results are shown on screen instead of downloaded
+  },
 };
 
 async function run() {
@@ -435,8 +510,9 @@ async function run() {
   $('#run').disabled = true;
   setStatus('Procesando…');
   try {
-    download(await runners[state.tool]());
-    setStatus('¡Listo! El archivo se descargó.');
+    const result = await runners[state.tool]();
+    if (result) download(result);
+    setStatus(result ? '¡Listo! El archivo se descargó.' : '¡Listo!');
   } catch (error) {
     setStatus(error.message, true);
   } finally {
