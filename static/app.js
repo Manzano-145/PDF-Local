@@ -521,6 +521,16 @@ async function run() {
   }
 }
 
+async function quitApp() {
+  if (!window.confirm('¿Cerrar PDF Local? El servidor se detendrá.')) return;
+  try {
+    await fetch('/api/shutdown', { method: 'POST', headers: { 'X-PDF-Local': '1' } });
+  } catch { /* server may already be gone */ }
+  for (const id of ['home', 'tool']) $(`#${id}`).hidden = true;
+  $('#quit').hidden = true;
+  $('#closed').hidden = false;
+}
+
 // ---------- Wiring ----------
 
 function init() {
@@ -535,6 +545,7 @@ function init() {
   $('#home-link').addEventListener('click', (event) => { event.preventDefault(); showHome(); });
   $('#back').addEventListener('click', showHome);
   $('#run').addEventListener('click', run);
+  $('#quit').addEventListener('click', quitApp);
 
   const input = $('#file-input');
   input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });

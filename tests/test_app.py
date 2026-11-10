@@ -194,3 +194,31 @@ def test_markdown_advanced_layout_keeps_table(client):
     response = post(client, "/api/markdown", [make_table_pdf()], advanced_layout="true")
     assert response.status_code == 200
     assert "|Manzanas|100|" in response.json["files"][0]["markdown"].replace(" ", "")
+
+
+def test_health_identifies_the_app(client):
+    response = client.get("/api/health")
+    assert response.json == {"app": "pdf-local"}
+
+
+def test_shutdown_calls_registered_hook(client):
+    calls = []
+    app.config["SHUTDOWN_HOOK"] = lambda: calls.append(True)
+    try:
+        response = client.post("/api/shutdown", headers={"X-PDF-Local": "1"})
+    finally:
+        app.config.pop("SHUTDOWN_HOOK")
+    assert response.status_code == 200
+    assert calls == [True]
+
+
+def test_shutdown_requires_custom_header(client):
+    # A custom header forces a CORS preflight, so other websites cannot close the app.
+    calls = []
+    app.config["SHUTDOWN_HOOK"] = lambda: calls.append(True)
+    try:
+        response = client.post("/api/shutdown")
+    finally:
+        app.config.pop("SHUTDOWN_HOOK")
+    assert response.status_code == 403
+    assert calls == []

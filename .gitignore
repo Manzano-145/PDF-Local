@@ -2,3 +2,7 @@
 __pycache__/
 .pytest_cache/
 .atl/
+build/
+dist/
+*.spec
+build_icon.ico

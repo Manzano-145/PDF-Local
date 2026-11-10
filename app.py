@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import webbrowser
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, abort, jsonify, request, send_file, send_from_directory
 
 import pdf_tools
 from pdf_tools import PageRef, PdfToolError
 
-STATIC_DIR = Path(__file__).parent / "static"
+# When frozen with PyInstaller, bundled data lives under sys._MEIPASS.
+BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+STATIC_DIR = BASE_DIR / "static"
+APP_ID = "pdf-local"
 
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB per request
@@ -60,6 +64,22 @@ def index():
 @app.get("/static/<path:name>")
 def static_files(name: str):
     return send_from_directory(STATIC_DIR, name)
+
+
+@app.get("/api/health")
+def api_health():
+    return jsonify(app=APP_ID)
+
+
+@app.post("/api/shutdown")
+def api_shutdown():
+    # Requiring a custom header forces a CORS preflight, so other websites can't close the app.
+    if request.headers.get("X-PDF-Local") != "1":
+        abort(403)
+    hook = app.config.get("SHUTDOWN_HOOK")
+    if hook:
+        hook()
+    return jsonify(ok=True)
 
 
 @app.post("/api/thumbnails")
@@ -137,6 +157,10 @@ def api_markdown():
 
 
 if __name__ == "__main__":
+    import os
+    import threading
+
     host, port = "127.0.0.1", 5000
+    app.config["SHUTDOWN_HOOK"] = lambda: threading.Timer(0.3, os._exit, [0]).start()
     webbrowser.open(f"http://{host}:{port}")
     app.run(host=host, port=port, debug=False)

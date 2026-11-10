@@ -12,7 +12,7 @@ them to Markdown, without uploading anything to third parties.
 
 ## Run
 
-Double-click `iniciar.bat`, or:
+Double-click `iniciar.bat` (runs from source with the tray icon), or:
 
 ```bash
 python -m venv .venv
@@ -21,6 +21,18 @@ python -m venv .venv
 ```
 
 The browser opens at http://127.0.0.1:5000.
+
+## Desktop executable
+
+```bash
+build_exe.bat
+```
+
+Produces `dist\PDFLocal\PDFLocal.exe` (keep the whole `dist\PDFLocal` folder together; create
+a shortcut to the `.exe`). Double-click it to start the server and open the browser. A tray
+icon next to the clock offers *Abrir PDF Local* and *Salir*; the *Cerrar* button in the web UI
+also stops it. Launching it again while running just reopens the browser. If port 5000 is busy
+it uses the next free port up to 5010.
 
 ## Tools
 

@@ -4,4 +4,5 @@ cryptography>=42.0
 pypdfium2>=4.30
 pillow>=10.0
 pymupdf4llm>=0.2
+pystray>=0.19
 pytest>=8.0

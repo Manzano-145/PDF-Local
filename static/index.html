@@ -9,8 +9,16 @@
 <body>
   <header class="topbar">
     <a href="#" class="logo" id="home-link">PDF<span>Local</span></a>
-    <span class="badge">🔒 100% local · tus archivos nunca salen de tu equipo</span>
+    <div class="topbar-right">
+      <span class="badge">🔒 100% local · tus archivos nunca salen de tu equipo</span>
+      <button class="secondary" id="quit" title="Detener PDF Local">⏻ Cerrar</button>
+    </div>
   </header>
+
+  <main id="closed" class="home" hidden>
+    <h1>PDF Local se cerró</h1>
+    <p class="lead">Ya podés cerrar esta pestaña. Para volver a usarlo, abrí PDFLocal.exe.</p>
+  </main>
 
   <main id="home" class="home">
     <h1>Herramientas PDF en tu propia máquina</h1>
