@@ -1,7 +1,7 @@
 # PDF Local
 
 Local PDF toolkit inspired by iLovePDF: merge, split, unlock, protect, organize PDFs and convert
-them to Markdown, without uploading anything to third parties.
+them to Markdown (and Markdown back to PDF), without uploading anything to third parties.
 
 ## Privacy
 
@@ -44,6 +44,7 @@ it uses the next free port up to 5010.
 | Protect | `POST /api/protect` | `new_password` (AES-256), `password` if already protected |
 | Organize | `POST /api/organize` | `pages` JSON: `{file, page, rotate}` or `{blank: true}` |
 | PDF to Markdown | `POST /api/markdown` | Full text with headings, lists and tables as Markdown, with `<!-- Página N / M -->` markers. Returns JSON. |
+| Markdown to PDF | `POST /api/md-to-pdf` | `.md` `files` and/or pasted `text`; one PDF each (zip when several). A4, page numbers, title from the first `#` heading. |
 | Thumbnails | `POST /api/thumbnails` | optional `limit`, `password` |
 
 ## PDF to Markdown
@@ -57,6 +58,13 @@ model for multi-column pages and borderless tables; it is much slower.
 
 Limitation: scanned PDFs (pages that are images) have no extractable text. Those pages are
 flagged in the UI and in the `.md`; OCR is not included.
+
+## Markdown to PDF
+
+Renders CommonMark + GFM tables, task lists and strikethrough with PyMuPDF's HTML engine
+(no extra native dependencies). Images are never downloaded: their alt text is shown instead,
+so nothing leaves the machine. HTML comments (like the page markers from *PDF a Markdown*)
+are not printed.
 
 ## Tests
 

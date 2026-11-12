@@ -222,3 +222,81 @@ def test_shutdown_requires_custom_header(client):
         app.config.pop("SHUTDOWN_HOOK")
     assert response.status_code == 403
     assert calls == []
+
+
+SAMPLE_MD = """# Informe de Gestión
+
+<!-- Página 1 / 2 -->
+
+Texto con **negrita** y acentos: ñ á é í ó ú.
+
+| Producto | Cantidad |
+|---|---:|
+| Manzanas | 100 |
+
+1. Primero
+2. Segundo:
+   - Sub ítem A
+   - Sub ítem B
+
+- [x] Hecha
+- [ ] Pendiente
+
+![Logo de la empresa](https://example.com/logo.png)
+"""
+
+
+def pdf_text(data: bytes) -> str:
+    return "\n".join(page.extract_text() for page in PdfReader(io.BytesIO(data)).pages)
+
+
+def post_md(client, files=(), **form):
+    data = dict(form)
+    data["files"] = [(io.BytesIO(content.encode("utf-8")), name) for name, content in files]
+    return client.post("/api/md-to-pdf", data=data, content_type="multipart/form-data")
+
+
+def test_md_to_pdf_keeps_content_tables_and_lists(client):
+    response = post_md(client, [("informe.md", SAMPLE_MD)])
+    assert response.status_code == 200
+    assert response.mimetype == "application/pdf"
+    text = pdf_text(response.data)
+    for expected in ["Informe de Gestión", "negrita", "ñ á é í ó ú", "Producto", "Manzanas", "100",
+                     "Primero", "Sub ítem A", "Hecha", "Pendiente"]:
+        assert expected in text, expected
+    assert "Página 1 / 2" not in text  # HTML comments are not printed
+
+
+def test_md_to_pdf_never_fetches_images_and_keeps_alt_text(client):
+    text = pdf_text(post_md(client, [("informe.md", SAMPLE_MD)]).data)
+    assert "Logo de la empresa" in text
+
+
+def test_md_to_pdf_adds_page_numbers_and_title(client):
+    long_md = "# Largo\n\n" + "\n\n".join(f"Párrafo número {i}." for i in range(150))
+    response = post_md(client, [("largo.md", long_md)])
+    reader = PdfReader(io.BytesIO(response.data))
+    total = len(reader.pages)
+    assert total > 1
+    assert f"1 / {total}" in reader.pages[0].extract_text()
+    assert f"{total} / {total}" in reader.pages[-1].extract_text()
+    assert reader.metadata.title == "Largo"
+
+
+def test_md_to_pdf_from_pasted_text(client):
+    response = post_md(client, text="# Pegado\n\nContenido pegado desde un chat.")
+    assert response.status_code == 200
+    assert "Contenido pegado desde un chat." in pdf_text(response.data)
+
+
+def test_md_to_pdf_several_files_returns_zip(client):
+    response = post_md(client, [("uno.md", "# Uno"), ("dos.md", "# Dos")])
+    assert response.mimetype == "application/zip"
+    archive = zipfile.ZipFile(io.BytesIO(response.data))
+    assert archive.namelist() == ["uno.pdf", "dos.pdf"]
+    assert "Dos" in pdf_text(archive.read("dos.pdf"))
+
+
+def test_md_to_pdf_without_content_is_rejected(client):
+    response = post_md(client, text="   ")
+    assert response.status_code == 400

@@ -25,7 +25,17 @@ const TOOLS = {
     icon: '📝', title: 'PDF a Markdown', button: 'Convertir a Markdown', multiple: true,
     desc: 'Extrae todo el texto del PDF, incluidas tablas, títulos y listas, en un archivo .md liviano y listo para usar como contexto en un chat de IA.',
   },
+  mdToPdf: {
+    icon: '📄', title: 'Markdown a PDF', button: 'Convertir a PDF', multiple: true, fileType: 'md',
+    desc: 'Convierte archivos .md (o texto pegado desde un chat) en un PDF limpio y ordenado: títulos, tablas, listas y código tal cual.',
+  },
 };
+
+const FILE_TYPES = {
+  pdf: { accept: 'application/pdf,.pdf', extension: '.pdf', label: 'PDF', plural: 'PDFs' },
+  md: { accept: '.md,.markdown,text/markdown', extension: '.md', label: 'Markdown', plural: 'archivos .md' },
+};
+const fileTypeOf = (toolId) => FILE_TYPES[TOOLS[toolId].fileType || 'pdf'];
 
 const $ = (selector, root = document) => root.querySelector(selector);
 
@@ -73,8 +83,11 @@ async function api(path, formData, expect = 'blob') {
   }
   if (expect === 'json') return response.json();
   const disposition = response.headers.get('Content-Disposition') || '';
-  const match = disposition.match(/filename="?([^";]+)"?/);
-  return { blob: await response.blob(), name: match ? match[1] : 'resultado.pdf' };
+  // Non-ASCII names come in the RFC 5987 form: filename*=UTF-8''<percent-encoded>.
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  const plain = disposition.match(/filename="?([^";]+)"?/);
+  const name = encoded ? decodeURIComponent(encoded[1]) : (plain ? plain[1] : 'resultado.pdf');
+  return { blob: await response.blob(), name };
 }
 
 function download({ blob, name }) {
@@ -138,7 +151,8 @@ function showHome() {
 
 function openTool(id) {
   const tool = TOOLS[id];
-  Object.assign(state, { tool: id, files: [], pages: [], selected: new Set(), splitMode: 'ranges', ranges: '', busy: false });
+  Object.assign(state, { tool: id, files: [], pages: [], selected: new Set(), splitMode: 'ranges', ranges: '', mdText: '', busy: false });
+  $('#file-input').accept = fileTypeOf(id).accept;
   $('#home').hidden = true;
   $('#tool').hidden = false;
   $('#tool-title').textContent = tool.title;
@@ -158,10 +172,13 @@ function setStatus(text, isError = false) {
 // ---------- File intake ----------
 
 async function addFiles(fileList) {
-  const pdfs = [...fileList].filter((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
-  if (!pdfs.length) return setStatus('Solo se aceptan archivos PDF.', true);
   const tool = state.tool;
-  const incoming = TOOLS[tool].multiple ? pdfs : pdfs.slice(0, 1);
+  const type = fileTypeOf(tool);
+  const accepted = [...fileList].filter((f) => f.name.toLowerCase().endsWith(type.extension)
+    || (type.extension === '.md' && f.name.toLowerCase().endsWith('.markdown'))
+    || (type.extension === '.pdf' && f.type === 'application/pdf'));
+  if (!accepted.length) return setStatus(`Solo se aceptan ${type.plural}.`, true);
+  const incoming = TOOLS[tool].multiple ? accepted : accepted.slice(0, 1);
   if (!TOOLS[tool].multiple) { state.files = []; state.pages = []; state.selected.clear(); state.ranges = ''; }
 
   setStatus('Procesando…');
@@ -225,15 +242,18 @@ function render() {
 
   const dropzone = $('#dropzone');
   dropzone.classList.toggle('compact', hasFiles);
+  const type = fileTypeOf(state.tool);
   $('#drop-label').textContent = hasFiles
-    ? (TOOLS[state.tool].multiple ? 'Añadir más PDFs' : 'Cambiar archivo')
-    : (TOOLS[state.tool].multiple ? 'Seleccionar archivos PDF' : 'Seleccionar archivo PDF');
+    ? (TOOLS[state.tool].multiple ? `Añadir más ${type.plural}` : 'Cambiar archivo')
+    : (TOOLS[state.tool].multiple ? `Seleccionar ${type.plural}` : `Seleccionar archivo ${type.label}`);
   $('#actions').hidden = !hasFiles;
 
-  if (!hasFiles) return;
   const renderers = {
     merge: renderMerge, split: renderSplit, unlock: renderUnlock, protect: renderProtect, organize: renderOrganize, markdown: renderMarkdown,
+    mdToPdf: renderMdToPdf,
   };
+  // Markdown to PDF also works with pasted text, so it renders before any file is added.
+  if (!hasFiles && state.tool !== 'mdToPdf') return;
   renderers[state.tool](workspace);
 }
 
@@ -429,6 +449,30 @@ function renderMarkdown(workspace) {
   }
 }
 
+function renderMdToPdf(workspace) {
+  const updateActions = () => {
+    $('#actions').hidden = state.files.length === 0 && !state.mdText.trim();
+  };
+  const textarea = el('textarea', {
+    className: 'preview editor', spellcheck: 'false',
+    placeholder: '# Título\n\nPegá aquí el Markdown copiado de un chat de IA…',
+  }, state.mdText);
+  // Update state without re-rendering, so typing keeps the cursor in place.
+  textarea.addEventListener('input', () => { state.mdText = textarea.value; updateActions(); });
+
+  if (state.files.length) {
+    workspace.append(
+      el('p', { className: 'hint' }, 'Cada archivo .md se convierte en su propio PDF (varios se descargan en un .zip).'),
+      el('div', { className: 'grid' }, state.files.map((f) => fileTile(f))),
+    );
+  }
+  workspace.append(el('div', { className: 'panel wide' },
+    el('strong', {}, state.files.length ? 'También podés pegar texto (se genera un PDF adicional)' : 'O pegá el texto en Markdown'),
+    textarea,
+    el('p', { className: 'hint' }, 'Las imágenes no se descargan (para no conectarse a internet): se muestra su descripción en su lugar.')));
+  updateActions();
+}
+
 // ---------- Actions ----------
 
 function filesForm(entries) {
@@ -501,6 +545,14 @@ const runners = {
       render();
     }
     return null; // results are shown on screen instead of downloaded
+  },
+
+  async mdToPdf() {
+    if (!state.files.length && !state.mdText.trim()) throw new Error('Cargá un archivo .md o pegá el texto.');
+    const form = new FormData();
+    state.files.forEach((entry) => form.append('files', entry.file));
+    form.append('text', state.mdText);
+    return api('/api/md-to-pdf', form);
   },
 };
 

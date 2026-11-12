@@ -4,5 +4,7 @@ cryptography>=42.0
 pypdfium2>=4.30
 pillow>=10.0
 pymupdf4llm>=0.2
+markdown-it-py>=3.0
+mdit-py-plugins>=0.4
 pystray>=0.19
 pytest>=8.0

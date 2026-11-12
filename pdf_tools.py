@@ -229,3 +229,82 @@ def to_markdown(data: bytes, name: str, password: str | None = None, advanced_la
             body = "_(Página sin texto extraíble; posiblemente es una imagen escaneada.)_"
         sections.append(f"<!-- Página {number} / {page_total} -->\n\n{body}")
     return MarkdownResult("\n\n".join(sections) + "\n", page_total, empty_pages)
+
+
+_MARKDOWN_CSS = """
+body { font-family: sans-serif; font-size: 10.5pt; line-height: 1.45; color: #222; }
+h1 { font-size: 20pt; color: #111; border-bottom: 2px solid #e5322d; padding-bottom: 4pt; }
+h2 { font-size: 15pt; color: #c4211c; margin-top: 14pt; }
+h3 { font-size: 12.5pt; color: #333; }
+h4, h5, h6 { font-size: 11pt; color: #444; }
+table { border-collapse: collapse; width: 100%; margin: 8pt 0; }
+th { background-color: #f3f3f6; font-weight: bold; }
+th, td { border: 1px solid #c8c8d0; padding: 4pt 6pt; font-size: 9.5pt; }
+code { font-family: monospace; font-size: 9pt; background-color: #f3f3f6; }
+pre { font-family: monospace; font-size: 8.5pt; background-color: #f6f6f8; padding: 8pt;
+      border: 1px solid #e2e2ea; white-space: pre-wrap; }
+blockquote { color: #555; border-left: 3px solid #e5322d; padding-left: 8pt; margin-left: 0; }
+a { color: #1a5fb4; }
+hr { border: 0; border-top: 1px solid #ccc; }
+pre code { background-color: transparent; }
+ul.contains-task-list { list-style-type: none; }
+"""
+
+_PAGE_MARGINS = (56, 56, -56, -64)  # left, top, right, bottom (points); extra bottom room for the footer
+
+
+def _markdown_to_html(text: str) -> str:
+    from markdown_it import MarkdownIt
+    from mdit_py_plugins.tasklists import tasklists_plugin
+
+    parser = MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"]).use(tasklists_plugin)
+    html = parser.render(text)
+    # The PDF engine can't draw form controls: show task checkboxes as symbols.
+    html = re.sub(r"<input[^>]*checkbox[^>]*>", lambda m: "☑ " if "checked" in m.group(0) else "☐ ", html)
+    # Never load images (they could point to the network): keep their description instead.
+    html = re.sub(
+        r"<img\b[^>]*>",
+        lambda m: f"<em>[Imagen: {alt.group(1)}]</em>" if (alt := re.search(r'alt="([^"]*)"', m.group(0))) and alt.group(1)
+        else "<em>[Imagen]</em>",
+        html,
+    )
+    return html
+
+
+def markdown_title(text: str, fallback: str) -> str:
+    match = re.search(r"^#\s+(.+?)\s*#*\s*$", text, flags=re.MULTILINE)
+    return match.group(1).strip() if match else fallback
+
+
+def markdown_to_pdf(text: str, title: str) -> bytes:
+    """Render Markdown (headings, tables, lists, code, quotes) as a clean A4 PDF with page numbers."""
+    if not text.strip():
+        raise PdfToolError("El Markdown está vacío.")
+
+    import pymupdf
+
+    with _mupdf_lock:
+        story = pymupdf.Story(html=_markdown_to_html(text), user_css=_MARKDOWN_CSS)
+        buffer = io.BytesIO()
+        writer = pymupdf.DocumentWriter(buffer)
+        page_rect = pymupdf.paper_rect("a4")
+        content_rect = page_rect + _PAGE_MARGINS
+        more = True
+        while more:
+            device = writer.begin_page(page_rect)
+            more, _ = story.place(content_rect)
+            story.draw(device)
+            writer.end_page()
+        writer.close()
+
+        document = pymupdf.open(stream=buffer.getvalue(), filetype="pdf")
+        try:
+            total = len(document)
+            for number, page in enumerate(document, start=1):
+                footer = pymupdf.Rect(0, page_rect.height - 40, page_rect.width, page_rect.height - 20)
+                page.insert_textbox(footer, f"{number} / {total}", fontsize=8, color=(0.45, 0.45, 0.5),
+                                    align=pymupdf.TEXT_ALIGN_CENTER)
+            document.set_metadata({"title": title, "creator": "PDF Local"})
+            return document.tobytes(garbage=3, deflate=True)
+        finally:
+            document.close()

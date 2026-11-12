@@ -120,3 +120,5 @@ textarea.preview {
 }
 
 .topbar-right { display: flex; align-items: center; gap: .75rem; }
+
+textarea.editor { height: 260px; background: #fff; }

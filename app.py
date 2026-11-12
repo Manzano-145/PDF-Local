@@ -6,6 +6,7 @@ import io
 import json
 import sys
 import webbrowser
+import zipfile
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_file, send_from_directory
@@ -154,6 +155,36 @@ def api_markdown():
             "empty_pages": result.empty_pages,
         })
     return jsonify(files=results)
+
+
+@app.post("/api/md-to-pdf")
+def api_md_to_pdf():
+    documents = []  # (pdf file name, markdown text)
+    for upload in request.files.getlist("files"):
+        raw = upload.read()
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw.decode("latin-1")
+        documents.append((Path(upload.filename or "documento.md").stem, text))
+    pasted = request.form.get("text", "")
+    if pasted.strip():
+        documents.append((pdf_tools.markdown_title(pasted, "documento"), pasted))
+    if not documents:
+        raise PdfToolError("Cargá un archivo .md o pegá el texto en Markdown.")
+
+    outputs = [
+        (f"{stem}.pdf", pdf_tools.markdown_to_pdf(text, pdf_tools.markdown_title(text, stem)))
+        for stem, text in documents
+    ]
+    if len(outputs) == 1:
+        return _pdf_response(outputs[0][1], outputs[0][0])
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, payload in outputs:
+            archive.writestr(name, payload)
+    return send_file(io.BytesIO(buffer.getvalue()), mimetype="application/zip", as_attachment=True,
+                     download_name="documentos_pdf.zip")
 
 
 if __name__ == "__main__":
